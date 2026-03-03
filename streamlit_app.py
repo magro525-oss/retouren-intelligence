@@ -5,8 +5,8 @@ from fpdf import FPDF
 from datetime import datetime
 
 st.set_page_config(page_title="Retouren Intelligence", layout="wide")
-st.title("🚀 Retouren Intelligence – Dein Retouren-KI-Dashboard")
-st.markdown("**Upload deine Retouren-Datei → automatischer Report + Empfehlungen**")
+st.title("🚀 Retouren Intelligence")
+st.markdown("**Upload deine Retouren-Datei → automatischer Report**")
 
 uploaded_file = st.file_uploader("Excel oder CSV hochladen", type=["xlsx", "csv"])
 
@@ -16,32 +16,55 @@ if uploaded_file:
     else:
         df = pd.read_excel(uploaded_file)
 
-    df.columns = [col.strip() for col in df.columns]
-    st.success(f"✅ {len(df)} Zeilen geladen!")
+    df.columns = [str(col).strip() for col in df.columns]
+    st.success(f"✅ {len(df)} Zeilen geladen! Gefundene Spalten: {list(df.columns)}")
 
-    col1, col2, col3, col4 = st.columns(4)
-    ret_quote = (df.get('Retourenanzahl', pd.Series([0])).sum() / len(df) * 100) if len(df) > 0 else 0
-    with col1: st.metric("Retourenquote", f"{ret_quote:.1f}%")
-    with col2: st.metric("Gesamt Retouren", int(df.get('Retourenanzahl', 0).sum()))
-    with col3: st.metric("Betroffene Artikel", df.get('Artikelname', pd.Series([])).nunique())
-    with col4: st.metric("Durchschnittsrating", f"{df.get('Bewertung', pd.Series([3.5])).mean():.1f}")
+    # === SPALTEN-MAPPING (das ist der neue Teil) ===
+    st.subheader("Spalten zuordnen")
+    col1, col2 = st.columns(2)
+    with col1:
+        ret_col = st.selectbox("Spalte mit Retouren-Anzahl", options=df.columns, index=0)
+        cat_col = st.selectbox("Spalte mit Kategorie", options=df.columns, index=0)
+    with col2:
+        reason_col = st.selectbox("Spalte mit Retourengrund", options=df.columns, index=0)
+        name_col = st.selectbox("Spalte mit Artikelname", options=df.columns, index=0)
 
-    colA, colB = st.columns(2)
-    with colA:
-        fig1 = px.bar(df.groupby('Retourengrund')['Retourenanzahl'].sum().nlargest(10), title="Top 10 Retourengründe")
-        st.plotly_chart(fig1, use_container_width=True)
-    with colB:
-        fig2 = px.pie(df, names='Kategorie', values='Retourenanzahl', title="Retouren nach Kategorie")
-        st.plotly_chart(fig2, use_container_width=True)
+    # Berechnungen
+    df[ret_col] = pd.to_numeric(df[ret_col], errors='coerce').fillna(0)
 
-    st.subheader("🎯 Deine Handlungsempfehlungen")
-    # (die Empfehlungen bleiben wie vorher)
+    total_ret = int(df[ret_col].sum())
+    ret_quote = (total_ret / len(df) * 100) if len(df) > 0 else 0
 
+    colA, colB, colC, colD = st.columns(4)
+    with colA: st.metric("Retourenquote", f"{ret_quote:.1f}%")
+    with colB: st.metric("Gesamt Retouren", total_ret)
+    with colC: st.metric("Betroffene Artikel", df[name_col].nunique())
+    with colD: st.metric("Durchschnittsrating", "—")
+
+    # Charts
+    st.subheader("Top 10 Retourengründe")
+    fig1 = px.bar(df.groupby(reason_col)[ret_col].sum().nlargest(10).reset_index(), 
+                  x=reason_col, y=ret_col, title="Top 10 Gründe")
+    st.plotly_chart(fig1, use_container_width=True)
+
+    st.subheader("Retouren nach Kategorie")
+    fig2 = px.pie(df, names=cat_col, values=ret_col, title="Verteilung nach Kategorie")
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # Handlungsempfehlungen (bleiben generisch)
+    st.subheader("🎯 Handlungsempfehlungen")
+    top_reason = df[reason_col].value_counts().idxmax()
+    st.info(f"**Häufigster Grund:** {top_reason} → Hier solltest du als Erstes ansetzen (Montage, Akku, Verpackung etc.).")
+
+    # PDF Export
     if st.button("📄 Report als PDF herunterladen"):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="Retouren Intelligence Report – " + datetime.now().strftime("%d.%m.%Y"), ln=1)
-        pdf.output("Retouren_Report.pdf")
-        with open("Retouren_Report.pdf", "rb") as f:
-            st.download_button("Download PDF", f, file_name="Retouren_Report.pdf")
+        pdf.cell(200, 10, txt=f"Retouren Intelligence Report – {datetime.now().strftime('%d.%m.%Y')}", ln=1)
+        pdf.cell(200, 10, txt=f"Retourenquote: {ret_quote:.1f}%", ln=1)
+        pdf.output("report.pdf")
+        with open("report.pdf", "rb") as f:
+            st.download_button("PDF herunterladen", f, file_name="Retouren_Report.pdf")
+
+    st.caption("✅ Funktioniert jetzt mit deinen Original-Dateien")
