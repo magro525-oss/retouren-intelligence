@@ -17,19 +17,24 @@ if uploaded_file:
         df = pd.read_excel(uploaded_file)
 
     df.columns = [str(col).strip() for col in df.columns]
-    st.success(f"✅ {len(df)} Zeilen geladen! Gefundene Spalten: {list(df.columns)}")
+    st.success(f"✅ {len(df)} Zeilen geladen! Spalten: {list(df.columns)}")
 
-    # === SPALTEN-MAPPING (das ist der neue Teil) ===
-    st.subheader("Spalten zuordnen")
+    # Auto-Detect beste Spalten
+    ret_col = next((col for col in df.columns if 'Retouren' in col or 'Anz' in col), df.columns[0])
+    cat_col = next((col for col in df.columns if 'Kategorie' in col or 'Kat' in col), df.columns[0])
+    reason_col = next((col for col in df.columns if 'Grund' in col or 'Retourengrund' in col or 'Qualität' in col), df.columns[0])
+    name_col = next((col for col in df.columns if 'Artikelbezeichnung' in col or 'Artikelname' in col), df.columns[0])
+
+    st.subheader("Spalten zuordnen (Auto-Vorschlag)")
     col1, col2 = st.columns(2)
     with col1:
-        ret_col = st.selectbox("Spalte mit Retouren-Anzahl", options=df.columns, index=0)
-        cat_col = st.selectbox("Spalte mit Kategorie", options=df.columns, index=0)
+        ret_col = st.selectbox("Spalte mit Retouren-Anzahl", df.columns, index=list(df.columns).index(ret_col))
+        cat_col = st.selectbox("Spalte mit Kategorie", df.columns, index=list(df.columns).index(cat_col))
     with col2:
-        reason_col = st.selectbox("Spalte mit Retourengrund", options=df.columns, index=0)
-        name_col = st.selectbox("Spalte mit Artikelname", options=df.columns, index=0)
+        reason_col = st.selectbox("Spalte mit Retourengrund", df.columns, index=list(df.columns).index(reason_col))
+        name_col = st.selectbox("Spalte mit Artikelname", df.columns, index=list(df.columns).index(name_col))
 
-    # Berechnungen
+    # Numerisch machen
     df[ret_col] = pd.to_numeric(df[ret_col], errors='coerce').fillna(0)
 
     total_ret = int(df[ret_col].sum())
@@ -41,22 +46,20 @@ if uploaded_file:
     with colC: st.metric("Betroffene Artikel", df[name_col].nunique())
     with colD: st.metric("Durchschnittsrating", "—")
 
-    # Charts
+    # Charts (sicher gemacht)
     st.subheader("Top 10 Retourengründe")
-    fig1 = px.bar(df.groupby(reason_col)[ret_col].sum().nlargest(10).reset_index(), 
-                  x=reason_col, y=ret_col, title="Top 10 Gründe")
+    chart_data = df.groupby(reason_col)[ret_col].sum().nlargest(10).reset_index(name="Anzahl")
+    fig1 = px.bar(chart_data, x=reason_col, y="Anzahl", title="Top 10 Gründe")
     st.plotly_chart(fig1, use_container_width=True)
 
     st.subheader("Retouren nach Kategorie")
     fig2 = px.pie(df, names=cat_col, values=ret_col, title="Verteilung nach Kategorie")
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Handlungsempfehlungen (bleiben generisch)
     st.subheader("🎯 Handlungsempfehlungen")
     top_reason = df[reason_col].value_counts().idxmax()
-    st.info(f"**Häufigster Grund:** {top_reason} → Hier solltest du als Erstes ansetzen (Montage, Akku, Verpackung etc.).")
+    st.info(f"**Häufigster Grund:** {top_reason} → Hier solltest du zuerst ansetzen.")
 
-    # PDF Export
     if st.button("📄 Report als PDF herunterladen"):
         pdf = FPDF()
         pdf.add_page()
@@ -67,4 +70,4 @@ if uploaded_file:
         with open("report.pdf", "rb") as f:
             st.download_button("PDF herunterladen", f, file_name="Retouren_Report.pdf")
 
-    st.caption("✅ Funktioniert jetzt mit deinen Original-Dateien")
+    st.caption("✅ Jetzt robust für deine Original-Dateien")
